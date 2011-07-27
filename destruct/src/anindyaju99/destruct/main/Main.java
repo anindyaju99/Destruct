@@ -5,6 +5,7 @@
 package anindyaju99.destruct.main;
 
 import anindyaju99.destruct.common.FileDownload;
+import anindyaju99.destruct.filter.FilterLoader;
 import java.io.PrintStream;
 import anindyaju99.destruct.rules.RuleTreeExtractor;
 
@@ -15,13 +16,12 @@ import anindyaju99.destruct.rules.RuleTreeExtractor;
 public class Main {
 
     private enum Format {
-
         JSON,
         TEXT,
         NONE
     }
 
-    public static void exec(String url, String ruleFile,
+    private static void exec(String url, String ruleFile,
             boolean useCache, boolean saveCache,
             int delay,
             Format format,
@@ -33,9 +33,10 @@ public class Main {
             fd.loadCache();
         }
         fd.setDelay(delay);
-        RuleTreeExtractor rex = new RuleTreeExtractor(ruleFile);
+        RuleTreeExtractor rex = new RuleTreeExtractor(ruleFile, 0);
         String file = fd.getDownloadedFile(url);
         ExtractedNode node = rex.collect(url, file);
+        FilterLoader.getFilterLoader().endAll();
         ExtractedNodePrinter printer = null;
         switch (format) {
             case JSON: {
@@ -62,7 +63,6 @@ public class Main {
 
     public static void main(String[] args) {
         // TODO code application logic here
-
         String url = null;
         String ruleFile = null;
         boolean saveCache = true;
@@ -73,6 +73,7 @@ public class Main {
         String outFile = null;
         System.out.println("Help : -url url -rule ruleFile [-format json|text] [-o outfile] [-d delay] [-l log] [-nosavecache] [-noloadcache]");
         for (int i = 0; i < args.length; i++) {
+            System.out.println("Arg : " + args[i]);
             if (args[i].equals("-url")) {
                 i++;
                 url = args[i];

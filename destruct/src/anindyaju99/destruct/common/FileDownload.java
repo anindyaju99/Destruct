@@ -4,7 +4,7 @@
  */
 package anindyaju99.destruct.common;
 
-import anindyaju99.destruct.common.Config;
+//import anindyaju99.destruct.common.Config;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -79,6 +79,9 @@ public class FileDownload {
 
     public String getDownloadedFile(String url)
             throws Exception {
+        /*if (url.indexOf("://") == -1) {
+            url = "http://" + url;
+        }*/
         String file = results.get(url);
         if (file == null) {
             System.out.println("Downloading URL " + url);
@@ -141,8 +144,9 @@ public class FileDownload {
                 next.startsWith("ftp")) {
             // absolute URL
             return next;
-        }
-        if (next.charAt(0) == '/') {
+        } else if (next.length() == 0) {
+            return parent;
+        } else if (next.charAt(0) == '/') {
             // right after the domain
             int domainStart = parent.indexOf("://") + 3;
             if (domainStart == 2) {
@@ -163,11 +167,26 @@ public class FileDownload {
         } else {
             // relative url
             int dirEnd = parent.lastIndexOf('/');
-            if (dirEnd == -1) {
-                throw new Exception("Bug - Invalid parent url '" + parent + "'");
+            int protoEnd = parent.indexOf("://");
+            String dirURL = null;
+            if (dirEnd == -1 || protoEnd + 2 == dirEnd) {
+                //throw new Exception("Bug - Invalid parent url '" + parent + "'");
+                dirURL = parent + "/";
+            } else {
+                dirURL = parent.substring(0, dirEnd+1);
             }
-            String dirURL = parent.substring(0, dirEnd);
-            return dirURL = next;
+            return dirURL + next;
         }
+    }
+
+    public String normalizeURL(String url)
+        throws Exception
+    {
+        String retUrl = url;
+        if (retUrl.indexOf("#") != -1) {
+            int hash = retUrl.indexOf("#");
+            retUrl = retUrl.substring(0, hash);
+        }
+        return retUrl;
     }
 }

@@ -5,8 +5,15 @@
 package anindyaju99.destruct.rules;
 
 import anindyaju99.destruct.common.FileDownload;
+import anindyaju99.destruct.filter.Filter;
+import anindyaju99.destruct.filter.FilterLoader;
 import anindyaju99.destruct.main.ExtractedNode;
+import anindyaju99.destruct.process.ProcessValue;
+import anindyaju99.destruct.process.ProcessValueLoader;
+import com.sun.net.httpserver.Authenticator.Success;
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -23,10 +30,15 @@ public class RuleTreeExtractor {
     private RuleTree ruleTree = null;
     private List<ExtractedNode> nodeStack = null;
     private String thisURL = null;
-
-    public RuleTreeExtractor(String ruleFile)
+    private int depth = 0;
+    private int childNum = 0;
+    private String currRuleFile = null;
+    
+    public RuleTreeExtractor(String ruleFile, int depth)
             throws Exception {
-
+        currRuleFile = ruleFile;
+        this.depth = depth;
+        System.out.println("RuleTreeExtractor(" + ruleFile + "," + String.valueOf(depth) + ")");
         RuleTreeParser parser = new RuleTreeParser();
         ruleTree = parser.parse(ruleFile);
         ruleTree.print();
@@ -119,7 +131,7 @@ public class RuleTreeExtractor {
         context.setValue("$VALUE", new StringArg(node.getValue()));
         context.setValue("$NAME", new StringArg(node.getName()));
     }
-    private void buildExtractionTreeForFollow(ExtractedNode node, Cmd cmd)
+    private Filter.FilterAction buildExtractionTreeForFollow(ExtractedNode node, Cmd cmd)
             throws Exception
     {
         if (cmd.getType() != Cmd.CmdType.FOLLOW) {
@@ -128,16 +140,66 @@ public class RuleTreeExtractor {
         CmdArg link = cmd.getArg("FOLLOW");
         CmdArg with = cmd.getArg("WITH");
         CmdArg populate = cmd.getArg("POPULATE");
+        CmdArg filterCmdArg = cmd.getArg("FILTER");
+        CmdArg filterArgs = cmd.getArg("FILTER_ARGS");
+
         EvalContext evalContext = new EvalContext();
         populateEvalContext(evalContext, node);
         FileDownload fd = FileDownload.getInst();
         String nextURL = fd.createValidURL(thisURL, link.evaluate(evalContext));
-        String file = fd.getDownloadedFile(nextURL);
-        RuleTreeExtractor rex = new RuleTreeExtractor(with.evaluate(evalContext));
+        Filter.FilterAction ok = Filter.FilterAction.VISIT;
+        Filter filter = null;
+        nextURL = fd.normalizeURL(nextURL);
+        // apply filter
+        if (filterCmdArg != null) {
+            FilterLoader filterLoader = FilterLoader.getFilterLoader();
+            filter = filterLoader.loadFilter(filterCmdArg.toString());
+            filter.init(filterArgs.toString());
+            ok = filter.doVisit(nextURL, depth, childNum);
+        }
+
+        if (ok != Filter.FilterAction.VISIT) return ok;
+        String file = null;
+        try {
+            file = fd.getDownloadedFile(nextURL);
+            String fwdUrl = getMetaRefreshNextUrl(nextURL, file);
+            if (fwdUrl != null) {
+                nextURL = fwdUrl;
+                file = fd.getDownloadedFile(nextURL);
+            }
+        } catch (Exception ex) {
+            // do nothing. just make sure we continue
+            // with remaining links
+            return Filter.FilterAction.DONT_VISIT;
+        }
+        childNum++;
+        if (filter != null) {
+            filter.visit(file);
+        }
+
+        String newRuleFile = with.evaluate(evalContext);
+        File rf = new File(newRuleFile);
+        if (!rf.isFile()) {
+            // file not present. try out file in parent rules file's dir
+            File pf = new File(currRuleFile);
+            String dir = pf.getParent();
+            if (dir == null) {
+                throw new Exception("Can't find rule file " + newRuleFile);
+            }
+            rf = new File(dir, newRuleFile);
+            if (!rf.isFile()) {
+                throw new Exception("Can't find rule file " + newRuleFile);
+            }
+            newRuleFile = rf.getPath();
+        }
+
+        RuleTreeExtractor rex = new RuleTreeExtractor(newRuleFile,
+                                        depth + 1);
         ExtractedNode child = rex.collect(nextURL, file);
 
         //  now merge the new tree in the correct scope
         populateCorrectScope(child, populate);
+        return ok;
     }
 
     private void processPrintAction(ExtractedNode node, Cmd cmd)
@@ -173,6 +235,28 @@ public class RuleTreeExtractor {
         }
     }
 
+    private void buildExtractionTreeForProcessValue(ExtractedNode node, Cmd cmd)
+            throws Exception
+    {
+        if (cmd.getType() != Cmd.CmdType.PROCESS_VALUE) {
+            throw new Exception("Expecting PROCESS_VALUE");
+        }
+        CmdArg type = cmd.getArg("TYPE");
+        CmdArg cls = cmd.getArg("CLASS");
+        EvalContext evalContext = new EvalContext();
+        populateEvalContext(evalContext, node);
+        ProcessValueLoader pvl = ProcessValueLoader.getProcessValueLoader();
+        ProcessValue pv = pvl.loadProcessValue(cls.evaluate(evalContext));
+        String t = type.evaluate(evalContext);
+        if (t.equals("TO_STR")) {
+            node.setValue(pv.processToStr(node.getDomNode(), node.getValue()));
+        } else if (t.equals("TO_DOM")) {
+            node.setDomNode(pv.processToDom(node.getDomNode()));
+        } else {
+            throw new Exception("Expecting TO_STR or TO_DOM");
+        }
+    }
+
     private void buildExtractionTreeForAction(ExtractedNode node, Action action)
             throws Exception
     {
@@ -183,6 +267,10 @@ public class RuleTreeExtractor {
             switch (cmd.getType()) {
                 case FOLLOW: {
                     buildExtractionTreeForFollow(node, cmd);
+                    break;
+                }
+                case PROCESS_VALUE: {
+                    buildExtractionTreeForProcessValue(node, cmd);
                     break;
                 }
                 case PRINT: {
@@ -198,11 +286,14 @@ public class RuleTreeExtractor {
     public void buildExtractionTreeWithRule(ExtractedNode node, Object domNode, RuleTree rule)
             throws Exception {
         pushExtractedNode(node);
+        if (domNode instanceof TagNode) {
+            node.setDomNode((TagNode)domNode);
+        }
+        node.setValue(domNode.toString());
         // pre action
         buildExtractionTreeForAction(node, rule.getPreAction());
         if (rule.iterator() == null) {
             // leaf
-            node.setValue(domNode.toString());
         } else {
             Iterator<RuleTree> iter = rule.iterator();
             while (iter.hasNext()) {
@@ -229,6 +320,29 @@ public class RuleTreeExtractor {
         }
     }
 
+    private String metaRefreshNextUrl(String url, TagNode node, FileDownload fd)
+            throws Exception
+    {
+        try {
+        Object[] results = node.evaluateXPath("//meta[@http-equiv='refresh']/@content");
+        if (results == null || results.length == 0) {
+            return null;
+        }
+        if (results.length > 1) {
+            throw new Exception("Don't expect multiple meta http-eqiv=refresh tags");
+        }
+        String content = (String)results[0];
+        int urlStart = content.indexOf("URL=");
+        String fwdUrl = content.substring(urlStart + 4);
+        String newURL = fd.createValidURL(url, fwdUrl);
+        return fd.normalizeURL(newURL);
+        }
+        catch (StackOverflowError e) {
+            System.out.println("there");
+        }
+        return null;
+    }
+
     public ExtractedNode collect(String url, String file)
             throws Exception
     {
@@ -242,5 +356,21 @@ public class RuleTreeExtractor {
         buildExtractionTreeInsideScope(top, node, ruleTree);
         in.close();
         return top;
+    }
+
+    private String getMetaRefreshNextUrl(String url, String file)
+            throws Exception
+    {
+        InputStream in = new FileInputStream(file);
+        HtmlCleaner cleaner = new HtmlCleaner();
+        TagNode node = cleaner.clean(in);
+        FileDownload fd = FileDownload.getInst();
+        String fwdURL = metaRefreshNextUrl(url, node, fd);
+        if (fwdURL != null) {
+            url = fwdURL;
+            file = fd.getDownloadedFile(url);
+        }
+        in.close();
+        return url;
     }
 }

@@ -53,7 +53,7 @@ public class StringArg implements CmdArg {
                     tok = null;
                     continue;
                 }
-            } else if(p == '$') {
+            } else if(str[p] == '$') {
                 invar = true;
                 tok = "$";
                 p++;

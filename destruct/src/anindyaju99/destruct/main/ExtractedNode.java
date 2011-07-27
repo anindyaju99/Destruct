@@ -9,7 +9,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import anindyaju99.destruct.rules.Action;
+//import anindyaju99.destruct.rules.Action;
+import org.htmlcleaner.TagNode;
 
 /**
  *
@@ -19,6 +20,7 @@ public class ExtractedNode {
     public static String TOP_NAME = "__INT_TOP";
     private String name = null;
     private String value = null;
+    private TagNode domNode = null;
     private HashMap<String, List<ExtractedNode>> children = null;
     
     public ExtractedNode(String name) {
@@ -51,6 +53,12 @@ public class ExtractedNode {
             }
         }
         print(indent, "}");
+    }
+    public void setDomNode(TagNode n) {
+        domNode = n;
+    }
+    public TagNode getDomNode() {
+        return domNode;
     }
     public void setValue(String v) {
         value = v;

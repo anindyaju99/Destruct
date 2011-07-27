@@ -18,6 +18,7 @@ public class Cmd {
     public enum CmdType {
         PRINT,
         FOLLOW,
+        PROCESS_VALUE,
         NONE
     }
     private CmdType type = CmdType.NONE;
@@ -52,6 +53,10 @@ public class Cmd {
             }
             case FOLLOW: {
                 print("FOLLOW");
+                break;
+            }
+            case PROCESS_VALUE: {
+                print("PROCESS_VALUE");
                 break;
             }
             default: {

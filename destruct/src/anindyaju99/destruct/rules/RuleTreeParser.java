@@ -13,9 +13,7 @@ import java.util.HashMap;
  * @author anindya
  */
 public class RuleTreeParser {
-
     private enum TokenType {
-
         NODE,
         PATTERN,
         ID,
@@ -35,11 +33,46 @@ public class RuleTreeParser {
         POPULATE,
         VARIABLE,
         STRING,
+        FILTER,
+        FILTER_ARGS,
+        PROCESS_VALUE,
+        TO_STR,
+        TO_DOM,
         NONE
     }
 
-    private class Token {
+    private String getTokenTypeString(TokenType t) {
+        switch (t) {
+            case NODE: return "NODE";
+            case PATTERN: return "PATTERN";
+            case ID: return "ID";
+            case CHILDREN: return "CHILDREN";
+            case ENDCHILDREN: return "ENDCHILDREN";
+            case ENDNODE: return "ENDNODE";
+            case EQ: return "=";
+            case NL: return "new line";
+            case EOF: return "End of file";
+            case PREACTION: return "PREACTION";
+            case POSTACTION: return "POSTACTION";
+            case ENDPREACTION: return "ENDPREACTION";
+            case ENDPOSTACTION: return "ENDPOSTACTION";
+            case PRINT: return "PRINT";
+            case FOLLOW: return "FOLLOW";
+            case WITH: return "WITH";
+            case POPULATE: return "POPULATE";
+            case VARIABLE: return "VARIABLE";
+            case STRING: return "STRING";
+            case FILTER: return "FILTER";
+            case FILTER_ARGS: return "FILTER_ARGS";
+            case PROCESS_VALUE: return "PROCESS_VALUE";
+            case TO_STR: return "TO_STR";
+            case TO_DOM: return "TO_DOM";
+            default: error("Unexpected token requested for printing");
+        }
+        return null;
+    }
 
+    private class Token {
         public TokenType type = TokenType.NONE;
         public String val = null;
 
@@ -116,6 +149,27 @@ public class RuleTreeParser {
 
     private void putBack(String val) {
         bufferPos -= val.length();
+    }
+
+    private void putBack(Token tok) {
+        switch (tok.type) {
+            case ID: {
+                putBack(tok.val);
+                break;
+            }
+            case NL: {
+                error("Unhandled putBack request for token" + getTokenTypeString(tok.type));
+                break;
+            }
+            case EOF: {
+                error("Unhandled putBack request for token" + getTokenTypeString(tok.type));
+                break;
+            }
+            default: {
+                //error("Unhandled putBack request for token" + getTokenTypeString(tok.type));
+                putBack(getTokenTypeString(tok.type));
+            }
+        }
     }
 
     public static boolean isWS(char c) {
@@ -270,9 +324,25 @@ public class RuleTreeParser {
             return new Token(TokenType.FOLLOW);
         } else if (tok.equals("PRINT")) {
             return new Token(TokenType.PRINT);
+        } else if (tok.equals("FILTER")) {
+            return new Token(TokenType.FILTER);
+        } else if (tok.equals("FILTER_ARGS")) {
+            return new Token(TokenType.FILTER_ARGS);
+        } else if (tok.equals("PROCESS_VALUE")) {
+            return new Token(TokenType.PROCESS_VALUE);
+        } else if (tok.equals("TO_STR")) {
+            return new Token(TokenType.TO_STR);
+        } else if (tok.equals("TO_DOM")) {
+            return new Token(TokenType.TO_DOM);
         }
 
         return new Token(TokenType.ID, tok);
+    }
+
+    private Token nextToken(TokenType type) {
+        Token tok = nextToken();
+        error(tok.type == type, getTokenTypeString(type));
+        return tok;
     }
 
     private void consumeEOF() {
@@ -355,6 +425,21 @@ public class RuleTreeParser {
         error(tok.type == TokenType.VARIABLE, "Expectig $variable");
         arg = new VarArg(tok.val);
         cmd.addArg("POPULATE", arg);
+
+        tok = nextToken();
+        if (tok.type != TokenType.FILTER) {
+            putBack(tok);
+        } else {
+            tok = nextToken(TokenType.EQ);
+            tok = nextToken(TokenType.STRING);
+            arg = new StringArg(tok.val);
+            cmd.addArg("FILTER", arg);
+            tok = nextToken(TokenType.FILTER_ARGS);
+            tok = nextToken(TokenType.EQ);
+            tok = nextToken(TokenType.STRING);
+            arg = new StringArg(tok.val);
+            cmd.addArg("FILTER_ARGS", arg);
+        }
         return cmd;
     }
 
@@ -370,6 +455,22 @@ public class RuleTreeParser {
             error(false, "Expecting a $variable or a string");
         }
         cmd.addArg("PRINT", arg);
+        return cmd;
+    }
+
+    private Cmd parseProcessValue() {
+        Cmd cmd = new Cmd(Cmd.CmdType.PROCESS_VALUE);
+        Token tok = nextToken();
+        CmdArg arg = null;
+        if (tok.type == TokenType.TO_STR || tok.type == TokenType.TO_DOM) {
+            arg = new StringArg(getTokenTypeString(tok.type));
+        } else {
+            error(false, "Expecting a $variable or a string");
+        }
+        cmd.addArg("TYPE", arg);
+        tok = nextToken(TokenType.STRING);
+        arg = new StringArg(tok.val);
+        cmd.addArg("CLASS", arg);
         return cmd;
     }
 
@@ -392,6 +493,10 @@ public class RuleTreeParser {
                 }
                 case PRINT: {
                     cmd = parsePrint();
+                    break;
+                }
+                case PROCESS_VALUE: {
+                    cmd = parseProcessValue();
                     break;
                 }
                 default: {
