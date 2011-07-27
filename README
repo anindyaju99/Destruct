@@ -1,0 +1,15 @@
+Destruct is a tool to automatically extract information from semistructured 
+web pages. You give an URL and a template file as template and based on the
+template we crawl the original URL and retrieve the information. Destruct
+also can recursively follow links that are found. All you have to do is 
+mention that in your template file.
+
+Currently we generate the output in JSON format only. But it's possible,
+and we have future plans for other output formats. Since we are using Destruct
+as part of our project, we will add new formats as and when we need them.
+Alternatively you can request a new output format support. That we will support
+when we get some free cycles to support that. But obviously you have a third 
+option of writing a new output format support. That should not be very 
+difficult and we will try our best to answer all your queries in that process.
+
+
